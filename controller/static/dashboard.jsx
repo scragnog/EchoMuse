@@ -7762,6 +7762,15 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
   const WAKE_T_MIN = 0.1, WAKE_T_MAX = 0.975, WAKE_T_STEP = 0.025;
   const reflectT = t => Number((WAKE_T_MIN + WAKE_T_MAX - t).toFixed(3));
 
+  // A threshold stored before this range existed sits off the track: the old
+  // slider could write exactly 1.0, and a range input clamps an out-of-range
+  // value to min WITHOUT saying so, which would park the handle at the precise
+  // end and read back 0.975 — a plausible number for a device that cannot wake
+  // at all. Pin the handle deliberately, and keep the readout on the STORED
+  // value so the number stays true until a drag writes one on the track.
+  const wakeTrackFor = t => Math.min(WAKE_T_MAX, Math.max(WAKE_T_MIN, reflectT(t)));
+  const wakeT = config.owwThreshold ?? 0.5;
+
   const bands = config.eqBands ?? [0,0,0,0,0,0,0,0];
   const RING_SCENES = [
     { value: 'standard',   label: 'Standard',   swatches: ['#00b400'] },
@@ -7959,9 +7968,9 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
           <div>
             <div style={inputStyle}>
               <Slider label="Sensitivity" sub="wake confidence needed — raise it if ordinary speech wakes the Echo"
-                value={reflectT(config.owwThreshold ?? 0.5)}
+                value={wakeTrackFor(wakeT)}
                 min={WAKE_T_MIN} max={WAKE_T_MAX} step={WAKE_T_STEP}
-                formatValue={v => reflectT(v).toFixed(3)}
+                formatValue={() => wakeT.toFixed(3)}
                 onChange={v => set('owwThreshold', reflectT(v))}/>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: -12 }}>
                 <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--muted)' }}>Precise</span>

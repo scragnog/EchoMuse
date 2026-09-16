@@ -35,10 +35,23 @@ function liftMapping() {
   }
   const MIN = Number(c[1]), MAX = Number(c[2]), STEP = Number(c[3]);
   const body = new Function("WAKE_T_MIN", "WAKE_T_MAX", "t", `return ${f[1]};`);
-  return { MIN, MAX, STEP, reflectT: (t) => body(MIN, MAX, t) };
+  const reflectT = (t) => body(MIN, MAX, t);
+
+  const w = src.match(/const wakeTrackFor = t => ([^;]+);/);
+  if (!w) {
+    throw new Error(
+      "dashboard.jsx no longer defines wakeTrackFor — a threshold stored " +
+      "outside the range has to be pinned deliberately, or the range input " +
+      "clamps it silently and the readout flatters a device that cannot wake.");
+  }
+  const wakeTrackFor = new Function(
+    "WAKE_T_MIN", "WAKE_T_MAX", "reflectT", "t", `return ${w[1]};`)
+    .bind(null, MIN, MAX, reflectT);
+
+  return { MIN, MAX, STEP, reflectT, wakeTrackFor };
 }
 
-const { MIN, MAX, STEP, reflectT } = liftMapping();
+const { MIN, MAX, STEP, reflectT, wakeTrackFor } = liftMapping();
 
 // Every notch the slider can land on, as the threshold it writes to config.
 const notches = [];
@@ -87,11 +100,43 @@ assert.ok(Math.abs(steps - Math.round(steps)) < 1e-9,
   `the range must be a whole number of steps — got ${steps}`);
 
 // The shipped default has to be reachable by dragging, or the control cannot
-// return to it once moved.
-const DEFAULT = 0.5;
+// return to it once moved. Read from em_db.py rather than repeated here: a
+// default quietly moved off the grid is the same class of bug as the one this
+// file exists for, and a literal would keep passing through it.
+const db = readFileSync(join(HERE, "..", "em_db.py"), "utf8");
+const dm = db.match(/"owwThreshold":\s*([\d.]+),/);
+if (!dm) {
+  throw new Error(
+    "em_db.py no longer defines an owwThreshold default where this test reads " +
+    "it — if DEFAULTS moved, point this at the new home; the default must " +
+    "still land on a notch.");
+}
+const DEFAULT = Number(dm[1]);
+assert.ok(DEFAULT >= MIN && DEFAULT <= MAX,
+  `the ${DEFAULT} default must be inside the slider's range`);
 const offGrid = (DEFAULT - MIN) / STEP;
 assert.ok(Math.abs(offGrid - Math.round(offGrid)) < 1e-9,
   `the ${DEFAULT} default must land on a notch`);
+
+// ── Thresholds stored before this range existed ──────────────────────────────
+
+// The old slider could write exactly 1.0, so fielded configs carry it. The
+// handle has to be pinned rather than left to the range input, which clamps
+// out-of-range values to min silently.
+assert.strictEqual(wakeTrackFor(1.0), MIN,
+  "a legacy 1.0 threshold must pin the handle at the precise end");
+for (const legacy of [1.0, 1.5, 0.0, -1]) {
+  const track = wakeTrackFor(legacy);
+  assert.ok(track >= MIN && track <= MAX,
+    `a stored ${legacy} must land on the track, got ${track}`);
+}
+
+// ...and the readout must keep showing what is STORED, not where the handle
+// ended up, or 1.0 reads back as 0.975: a plausible number for a device that
+// cannot wake. Pinned as source shape, since the value is rendered by Slider.
+assert.ok(/formatValue=\{\(\) => wakeT\.toFixed\(3\)\}/.test(src),
+  "the Sensitivity readout must render the stored threshold, not the clamped " +
+  "track position — otherwise a device stored at 1.0 displays as 0.975");
 
 // ── The contract with the scorers ────────────────────────────────────────────
 
