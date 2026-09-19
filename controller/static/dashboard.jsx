@@ -233,7 +233,7 @@ function eventAccent(level) {
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
-function Lcd({ label, value, color, size = 16 }) {
+function Lcd({ label, value, color, size = 16, maxChars }) {
   return (
     <div className="em-lcd">
       {label && <div className="em-lcd__label">{label}</div>}
@@ -243,7 +243,11 @@ function Lcd({ label, value, color, size = 16 }) {
           invalid CSS that drops the whole declaration. The glow silently
           disappeared. color-mix takes a var(); 0x88 is 53%. */}
       <div style={{ fontFamily: "'DM Mono',monospace", fontSize: size, color: color || 'var(--lcd-green)', lineHeight: 1,
-                    textShadow: `0 0 8px color-mix(in srgb, ${color || 'var(--lcd-green)'} 53%, transparent)` }}>{value}</div>
+                    textShadow: `0 0 8px color-mix(in srgb, ${color || 'var(--lcd-green)'} 53%, transparent)`,
+                    whiteSpace: 'nowrap' }}
+           title={maxChars && typeof value === 'string' && value.length > maxChars ? value : undefined}>
+        {maxChars && typeof value === 'string' ? _middleEllipsis(value, maxChars, 7) : value}
+      </div>
     </div>
   );
 }
@@ -1281,10 +1285,10 @@ function ConnectivityTab({ device, row }) {
               {networks.map(n => (
                 <div key={n.ssid} onClick={() => !busy && setSsid(n.ssid)}
                   style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 8px', borderRadius:6, cursor: busy ? 'default' : 'pointer', background: ssid === n.ssid ? 'rgba(64,88,120,0.12)' : 'transparent' }}>
-                  <span style={{ fontFamily:mono, fontSize:11, color: ssid === n.ssid ? 'var(--accent)' : 'var(--text)' }}>
+                  <span title={n.ssid} style={{ fontFamily:mono, fontSize:11, color: ssid === n.ssid ? 'var(--accent)' : 'var(--text)', ..._ROW_TEXT }}>
                     {n.ssid}{n.ssid === currentSsid ? '  ← current' : ''}
                   </span>
-                  <span style={{ fontFamily:mono, fontSize:10, color:'var(--muted)' }}>{n.signal} dBm</span>
+                  <span style={{ fontFamily:mono, fontSize:10, color:'var(--muted)', ..._ROW_SIDE }}>{n.signal} dBm</span>
                 </div>
               ))}
             </div>
@@ -1769,7 +1773,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
               {renaming ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
-                    type="text" value={renameValue} autoFocus
+                    type="text" value={renameValue} autoFocus maxLength={_MAX_LABEL}
                     onChange={e => setRenameValue(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter') doRename();
@@ -1783,20 +1787,23 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
               ) : (
                 <div
                   onClick={() => isAdmin && setRenaming(true)}
-                  title={isAdmin ? 'Click to rename' : undefined}
+                  title={isAdmin ? `${device.label || device.device_id} — click to rename` : (device.label || device.device_id)}
                   style={{
                     fontFamily: "'DM Sans',sans-serif", fontSize: 26, color: 'var(--text)', fontWeight: 600,
                     letterSpacing: '-0.02em', lineHeight: 1, cursor: isAdmin ? 'pointer' : 'default',
                     display: 'inline-block',
                   }}>
-                  {device.label || <span style={{ color: 'var(--muted)', fontSize: 20 }}>{device.device_id.slice(0,8)}…</span>}
+                  {device.label ? _middleEllipsis(device.label, 32) : <span style={{ color: 'var(--muted)', fontSize: 20 }}>{device.device_id.slice(0,8)}…</span>}
                 </div>
               )}
-              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--muted)', marginTop: 4, letterSpacing: '0.05em' }}>
+              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--muted)', marginTop: 4, letterSpacing: '0.05em',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                   title={[device.firmware_ver, _kernelTitle(device)].filter(Boolean).join(' · ') || undefined}>
                 {(() => {
                   const ip = device.ip && device.ip !== '127.0.0.1' ? device.ip : null;
                   const ipStr = device.connected ? (ip || '—') : (ip ? `${ip} (last seen)` : '—');
-                  return <>{ipStr} · {device.device_id} · {device.firmware_ver || 'unknown'}</>;
+                  const os = [_osLabel(device), _kernelLabel(device)].filter(Boolean).join(' · ');
+                  return <>{ipStr} · {device.device_id} · {_middleEllipsis(device.firmware_ver, 24, 7) || 'unknown'}{os && ` · ${os}`}</>;
                 })()}
                 {needsUpdate && <span style={{ color: 'var(--warn)', marginLeft: 10 }}>Update available</span>}
               </div>
@@ -1846,7 +1853,7 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
               {row('First seen', relTime(device.first_seen))}
               <div style={{ marginTop: 24, marginBottom: 8 }}>
                 <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>Label</div>
-                <input type="text" value={approveLabel} onChange={e => setApproveLabel(e.target.value)} placeholder="e.g. Kitchen" onKeyDown={e => e.key === 'Enter' && doApprove()}/>
+                <input type="text" value={approveLabel} maxLength={_MAX_LABEL} onChange={e => setApproveLabel(e.target.value)} placeholder="e.g. Kitchen" onKeyDown={e => e.key === 'Enter' && doApprove()}/>
                 <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                   Names the device everywhere — the dashboard, and “{approveLabel.trim() || '…'} Voice Assistant” in Home Assistant.
                 </div>
@@ -2173,11 +2180,11 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
               {/* Firmware state */}
               <Panel label="Firmware">
                 <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
-                  <div style={{ display:'flex', gap:16, alignItems:'flex-end' }}>
-                    <Lcd label="On device"  value={device.firmware_ver || '—'} color={needsUpdate ? 'var(--lcd-amber)' : 'var(--lcd-green)'}/>
-                    <Lcd label="Available"  value={release?.version || '—'} color="var(--lcd-dim)"/>
+                  <div style={{ display:'flex', gap:16, alignItems:'flex-end', flexWrap:'wrap', minWidth:0 }}>
+                    <Lcd label="On device"  value={device.firmware_ver || '—'} maxChars={16} color={needsUpdate ? 'var(--lcd-amber)' : 'var(--lcd-green)'}/>
+                    <Lcd label="Available"  value={release?.version || '—'} maxChars={16} color="var(--lcd-dim)"/>
                     {device.firmware_previous && (
-                      <Lcd label="Rollback slot" value={device.firmware_previous} color="var(--lcd-dim)"/>
+                      <Lcd label="Rollback slot" value={device.firmware_previous} maxChars={16} color="var(--lcd-dim)"/>
                     )}
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -2494,7 +2501,10 @@ function Detail({ device, token, onClose, onApprove, isAdmin, globalConfig, onDe
                 <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: 'var(--muted)' }}>No logs</div>
               ) : logs.map((entry, i) => (
                 <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '8px 0', borderBottom: '1px solid var(--hairline)' }}>
-                  <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--faint)', minWidth: 60, flexShrink: 0 }}>{new Date(entry.ts).toLocaleTimeString()}</span>
+                  {/* Two-digit hour and a width in ch: the column is monospaced, and
+                      "9:05:01 am" is a character shorter than "11:37:57 am", which
+                      misaligned every row before ten o'clock. */}
+                  <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--faint)', minWidth: '11ch', whiteSpace: 'nowrap', flexShrink: 0 }}>{new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: eventAccent(entry.level), textTransform: 'uppercase', letterSpacing: '0.1em', minWidth: 48, flexShrink: 0 }}>{entry.level}</span>
                   <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: entry.source === 'device' ? 'var(--lcd-faint)' : 'var(--accent-deep)', textTransform: 'uppercase', letterSpacing: '0.08em', minWidth: 64, flexShrink: 0 }}>{entry.source}</span>
                   <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: 'var(--text2)' }}>{entry.message}</span>
@@ -2519,23 +2529,34 @@ function Card({ device, onClick }) {
       onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,0,0,0.18),0 1px 0 var(--sheen) inset'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
       onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 16px var(--track),0 1px 0 var(--sheen) inset'; e.currentTarget.style.transform = 'translateY(0)'; }}>
       <div style={{ background: 'linear-gradient(180deg,var(--sunken),var(--sunken))', borderBottom: '1px solid var(--border-hard)', borderRadius: '13px 13px 0 0', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 0 var(--sheen) inset' }}>
-        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: 'var(--text)', fontWeight: 600, letterSpacing: '-0.01em' }}>
-          {device.label || <span style={{ color: 'var(--muted)', fontSize: 12 }}>{device.device_id.slice(0, 8)}…</span>}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {isPending && (
-            // Chrome sized this box off the DM Mono line box rather than the
-            // glyphs, so 1px symmetric padding rendered visibly bottom-heavy
-            // next to the 14px label. inline-flex + lineHeight:1 makes the
-            // height the text's own; the trimmed paddingRight cancels the
-            // trailing letter-space Chrome leaves after the final N, which is
-            // what made the word look shunted left inside its own badge.
-            <div style={{ display: 'inline-flex', alignItems: 'center', background: 'linear-gradient(160deg,var(--lcd-face),var(--lcd-deep))', border: '1px solid var(--lcd-line)', borderRadius: 3, padding: '3px 6px', paddingRight: 'calc(6px - 0.1em)', fontFamily: "'DM Mono',monospace", fontSize: 9, lineHeight: 1, color: 'var(--accent-lit)', letterSpacing: '0.1em' }}>PENDING</div>
-          )}
-          {!isPending && device.firmware_ver && (
-            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: 'var(--muted)' }}>{device.firmware_ver}</div>
+        {/* The NAME owns the header row; firmware · OS sits beneath it. Side by
+            side, a long version squeezed the name down to two letters — and
+            the name is what someone scans the grid for. */}
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+          <div title={device.label || device.device_id}
+            style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: 'var(--text)', fontWeight: 600, letterSpacing: '-0.01em', ..._ROW_TEXT, display: 'block' }}>
+            {device.label ? _middleEllipsis(device.label, 30) : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{device.device_id.slice(0, 8)}…</span>}
+          </div>
+          {(device.firmware_ver || device.baseOs) && (
+            <div title={[device.firmware_ver, _baseOsLabel(device.baseOs), _kernelTitle(device)].filter(Boolean).join(' · ')}
+              style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: 'var(--muted)', marginTop: 3, display: 'flex', minWidth: 0 }}>
+              {/* The tile is narrow: "emOS (64-bit)", and nothing extra for
+                  FireOS. The OS never shrinks; the firmware version gives way
+                  to it, since the tooltip and the header both carry it whole. */}
+              {device.firmware_ver && <span style={{ ..._ROW_TEXT, flex: '0 1 auto' }}>{_middleEllipsis(device.firmware_ver, 24, 7)}</span>}
+              {_osLabel(device) && <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{device.firmware_ver ? '\u00a0· ' : ''}{_osLabel(device)}</span>}
+            </div>
           )}
         </div>
+        {isPending && (
+          // Chrome sized this box off the DM Mono line box rather than the
+          // glyphs, so 1px symmetric padding rendered visibly bottom-heavy
+          // next to the 14px label. inline-flex + lineHeight:1 makes the
+          // height the text's own; the trimmed paddingRight cancels the
+          // trailing letter-space Chrome leaves after the final N, which is
+          // what made the word look shunted left inside its own badge.
+          <div style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, marginLeft: 8, background: 'linear-gradient(160deg,var(--lcd-face),var(--lcd-deep))', border: '1px solid var(--lcd-line)', borderRadius: 3, padding: '3px 6px', paddingRight: 'calc(6px - 0.1em)', fontFamily: "'DM Mono',monospace", fontSize: 9, lineHeight: 1, color: 'var(--accent-lit)', letterSpacing: '0.1em' }}>PENDING</div>
+        )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 12px' }}>
         <LedRing state={state} size={120}/>
@@ -2822,6 +2843,77 @@ function _bannerMode(banner) {
 
 const _MODE_NAME = { twrp: 'TWRP recovery', android: 'Android' };
 
+// The userspace a device runs, as the tile and the detail header show it.
+// FireOS native is FireOS 5 only (the FireOS flow refuses anything newer), so
+// the two answers the device can give map to two labels. Null — old firmware,
+// or a device that has never registered — shows nothing rather than a guess.
+// Shorten TEXT to at most MAX characters by replacing its MIDDLE with "…",
+// keeping the start and the end. Device labels differ at the end as often as
+// the start ("… numbered 01" / "… numbered 02"), and a version's end is its
+// build hash, so a plain trailing ellipsis would make two different things
+// read the same. `tail` is how much of the end to keep. Callers put the full
+// text in a title so nothing is lost, and still guard the container with CSS,
+// since a character count is only an estimate of width in a proportional font.
+// The two halves of a row that must not shunt: the NAME side shrinks and
+// clips, the SIDE (status, signal, version) keeps its width. Every
+// space-between row of user-supplied text uses both; without minWidth 0 a
+// flex child will not shrink below its content, and a long name pushes its
+// neighbour off the row.
+// Longest label the rename and approve boxes accept. Mirrors em_labels.
+// MAX_LABEL_LEN; tests/test_labels.py fails if they disagree. The server
+// refuses a longer one either way — this only stops the typing.
+const _MAX_LABEL = 32;
+
+const _ROW_TEXT = { minWidth: 0, flex: '1 1 auto', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' };
+const _ROW_SIDE = { flexShrink: 0, whiteSpace: 'nowrap', marginLeft: 10 };
+
+function _middleEllipsis(text, max, tail) {
+  if (!text || text.length <= max) return text;
+  const keepEnd = Math.min(tail ?? Math.max(2, Math.floor(max / 3)), max - 2);
+  const keepStart = max - 1 - keepEnd;
+  return text.slice(0, keepStart).trimEnd() + '…' + text.slice(text.length - keepEnd).trimStart();
+}
+
+function _baseOsLabel(baseOs) {
+  return baseOs === 'emos' ? 'emOS' : baseOs === 'fireos' ? 'FireOS 5' : null;
+}
+
+// The kernel's word size from `uname -m`: "64-bit" or "32-bit". On biscuit it
+// is what separates emOS on FireOS 5's kernel from emOS on FireOS 6's — same
+// ARMv8 chip, both 3.18.19, one kernel built 32-bit.
+//
+// `armv8l` means a 64-bit kernel. The server is a 32-bit program, and an arm64
+// kernel reports COMPAT_UTS_MACHINE ("armv8l") to 32-bit tasks rather than
+// "aarch64"; a 32-bit ARM kernel never reports armv8l (it has no ARMv8
+// architecture level and says armv7l, as the spare does). Measured 2026-09-19:
+// EFF and NF on FireOS 5's arm64 kernel register as armv8l. Unrecognised
+// values pass through as-is.
+function _archShort(arch) {
+  if (!arch) return null;
+  if (/^(aarch64|arm64|armv8l|x86_64|amd64)$/.test(arch)) return '64-bit';
+  if (/^(armv[1-7]l?|arm|i[3-6]86)$/.test(arch)) return '32-bit';
+  return arch;
+}
+
+// The OS as shown per device: "emOS (64-bit)", "FireOS 5". The bitness is only
+// added for emOS, the one base that runs on more than one kernel.
+function _osLabel(d) {
+  const os = _baseOsLabel(d.baseOs);
+  const arch = d.baseOs === 'emos' ? _archShort(d.kernelArch) : null;
+  return os && arch ? `${os} (${arch})` : os;
+}
+
+// "kernel 3.18.19" for the device header, beside _osLabel which already names
+// the arch for emOS. Drops the build suffix ("+", "-gecb8cb46060-dirty");
+// _kernelTitle keeps the full string for the tooltip.
+function _kernelLabel(d) {
+  const v = (d.kernelRelease || '').split(/[-+]/)[0];
+  return v ? `kernel ${v}` : null;
+}
+function _kernelTitle(d) {
+  return d.kernelArch ? `kernel ${d.kernelArch} ${d.kernelRelease || ''}`.trim() : null;
+}
+
 const _INIT_RC_APPEND = `
 service mixer /system/bin/sh
     oneshot
@@ -2884,6 +2976,93 @@ const _unlockVerdict = ({ release = '', expdb = '', twrp = '' }) => {
   return { v2: evidence.length > 0, evidence };
 };
 
+// Did the optional factory reset actually happen? Read from the probe
+// runWipeData sends after `twrp wipe data` / `twrp wipe cache`, whose exit
+// status says nothing. The probe prints:
+//
+//   DATA=<count of /data mounts>   — 0 means nothing below can be believed:
+//                                    `[ -e ]` on an unmounted /data is false
+//                                    for everything, which reads as wiped.
+//   LEFT=<names>                   — which of Android's and EchoMuse's own
+//                                    /data directories still exist. A factory
+//                                    reset removes all of them.
+//   CACHE=<names>                  — what is left in /cache. lost+found and
+//                                    recovery/ (TWRP's own log) are expected.
+//   _WIPECHK                       — the probe ran to the end.
+//
+// A wipe that left anything in /data fails the step. /cache only warns: stale
+// cache is harmless, and TWRP writes to it itself.
+const _wipeVerdict = (out) => {
+  if (!out.includes('_WIPECHK')) {
+    return { ok: false, why: 'The check after the wipe did not run, so nothing shows it worked.' };
+  }
+  const pick = k => ((out.match(new RegExp('^' + k + '=(.*)$', 'm')) || [])[1] || '').trim();
+  if (!(parseInt(pick('DATA'), 10) > 0)) {
+    return { ok: false, why: '/data would not mount after the wipe, so it could not be checked.' };
+  }
+  const left = pick('LEFT').split(/\s+/).filter(Boolean);
+  if (left.length) {
+    return { ok: false, why: `The wipe left ${left.map(d => '/data/' + d).join(', ')} behind.` };
+  }
+  const cache = pick('CACHE').split(/\s+/)
+    .filter(n => n && n !== 'lost+found' && n !== 'recovery');
+  return { ok: true, why: '', cacheLeft: cache };
+};
+
+// The bytes of one exported data symbol in a 32-bit little-endian ELF shared
+// library, or null. Used to read MediaTek's compiled WiFi NVRAM default out of
+// the device's own libcustom_nvram.so (see ensureWifiNvram), so nothing of
+// Amazon's is shipped: the data comes off the device it is written back to.
+// Looks the name up in .dynsym and maps its address through the PT_LOAD
+// segments; anything it does not understand is null, never a guess.
+const _elfSymbol = (bytes, name) => {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (u8.length < 52 || u8[0] !== 0x7f || u8[1] !== 0x45 || u8[2] !== 0x4c || u8[3] !== 0x46
+      || u8[4] !== 1 || u8[5] !== 1) return null;
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const u16 = o => dv.getUint16(o, true), u32 = o => dv.getUint32(o, true);
+  try {
+    const phoff = u32(28), shoff = u32(32);
+    const phentsize = u16(42), phnum = u16(44), shentsize = u16(46), shnum = u16(48);
+    const loads = [];
+    for (let i = 0; i < phnum; i++) {
+      const p = phoff + i * phentsize;
+      if (u32(p) === 1) loads.push({ vaddr: u32(p + 8), off: u32(p + 4), filesz: u32(p + 16) });
+    }
+    const sec = i => { const s = shoff + i * shentsize;
+      return { type: u32(s + 4), off: u32(s + 16), size: u32(s + 20), link: u32(s + 24) }; };
+    const want = new TextEncoder().encode(name);
+    for (let i = 0; i < shnum; i++) {
+      const s = sec(i);
+      if (s.type !== 11) continue;                       // SHT_DYNSYM
+      const strOff = sec(s.link).off;
+      for (let j = 0; j < s.size / 16; j++) {
+        const e = s.off + j * 16;
+        const n = strOff + u32(e);
+        if (want.some((b, k) => u8[n + k] !== b) || u8[n + want.length] !== 0) continue;
+        const value = u32(e + 4), size = u32(e + 8);
+        const seg = loads.find(l => l.vaddr <= value && value + size <= l.vaddr + l.filesz);
+        if (!seg || !size) return null;
+        const at = seg.off + value - seg.vaddr;
+        return at + size <= u8.length ? u8.slice(at, at + size) : null;
+      }
+    }
+  } catch { return null; }
+  return null;
+};
+
+// An NVRAM record as libnvram writes it to /data/nvram: the data, then 0xAA,
+// then an 8-bit checksum that ADDS the even-indexed bytes and XORs the odd
+// ones. Derived from biscuit's own files 2026-09-19 — WIFI (514 bytes, the
+// same on EFF and VVV) and WIFI_CUSTOM (6) both reproduce exactly.
+const _nvramRecord = (data) => {
+  let cs = 0;
+  for (let i = 0; i < data.length; i++) cs = (i % 2 ? (cs ^ data[i]) : (cs + data[i])) & 0xff;
+  const out = new Uint8Array(data.length + 2);
+  out.set(data); out[data.length] = 0xaa; out[data.length + 1] = cs;
+  return out;
+};
+
 // WiFi security labels, used in the network picker and in error messages.
 // Module scope so WifiPanel and the wizard's step runners share one set.
 const _SECURITY_LABEL = {
@@ -2892,6 +3071,37 @@ const _SECURITY_LABEL = {
 
 const _MAGISK_FILENAME = 'Magisk-v17.3.zip';
 const _MAGISK_SHA256    = '18e46b16b25ebe691c282fe311beccd4811cd533848a64e2efbd754fb85efde7';
+
+// Is this an EchoMuse server binary? Checked before the install step pushes
+// anything, because nothing after it would notice: the step verifies the copy
+// by SIZE, so a wrong file installs cleanly, logs "EchoMuse installed", and
+// the device then boots without a server that can register — out of reach of
+// OTA too. Found 2026-09-18 when the escrowed boot image was picked as the
+// custom build on VVV.
+//
+// Two tests: a 32-bit ARM ELF (the header's class byte and e_machine 0x28),
+// and our own module path, which Go compiles in hundreds of times (352 in a
+// v2.15.0-37 build, 335 in the v2.15.0 release, 0 in a boot image). It
+// cannot say the binary will LOAD on this device — that needs running it,
+// and the server has no mode that does only that.
+function _serverBinaryVerdict(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (u8.length < 52 || u8[0] !== 0x7f || u8[1] !== 0x45 || u8[2] !== 0x4c || u8[3] !== 0x46) {
+    const head = new TextDecoder('latin1').decode(u8.slice(0, 8)).replace(/[^\x20-\x7e]/g, '.');
+    return { ok: false, reason: `That file is not a program at all (it starts "${head}"). `
+      + 'Choose the EchoMuse server binary.' };
+  }
+  const machine = u8[18] | (u8[19] << 8);
+  if (u8[4] !== 1 || machine !== 0x28) {
+    return { ok: false, reason: 'That is a program, but not a 32-bit ARM one, so it cannot run '
+      + 'on an Echo. Choose the EchoMuse server binary built for the device.' };
+  }
+  if (!new TextDecoder('latin1').decode(u8).includes('github.com/wilbowes/EchoMuse/')) {
+    return { ok: false, reason: 'That is an ARM program, but not an EchoMuse server. '
+      + 'Choose the EchoMuse server binary.' };
+  }
+  return { ok: true, reason: '' };
+}
 
 async function _sha256Hex(buf) {
   const digest = await crypto.subtle.digest('SHA-256', buf);
@@ -3051,10 +3261,10 @@ function WifiPanel({ ready, wifiSsid, setWifiSsid, wifiPsk, setWifiPsk, onScan, 
                 cursor: blocked ? 'not-allowed' : 'pointer',
                 opacity: blocked ? 0.5 : 1,
               }}>
-              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: wifiSsid === n.ssid ? 'var(--accent)' : 'var(--text)' }}>
+              <span title={n.ssid} style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: wifiSsid === n.ssid ? 'var(--accent)' : 'var(--text)', ..._ROW_TEXT }}>
                 {n.ssid}
               </span>
-              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: 'var(--muted)' }}>
+              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, color: 'var(--muted)', ..._ROW_SIDE }}>
                 {[n.securityLabel, (n.bands || []).join('+'), `${n.signal} dBm`]
                   .filter(Boolean).join(' · ')}
               </span>
@@ -3377,6 +3587,10 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // one mid-run would renumber the steps under a wizard that has already done
   // some of them, which is what the ref was protecting against.
   const [flow, setFlow] = useState(_wizardFlow);
+  // Factory reset at Connect to TWRP (runWipeData), emOS flow only. Off unless
+  // ticked, never remembered between runs, and locked with the flow once
+  // anything has run.
+  const [wipeData, setWipeData] = useState(false);
   const isEmos = flow === 'emos';
   const STEPS = isEmos ? _EMOS_STEPS : _WIZARD_STEPS;
   const STEP_MODE = isEmos ? _EMOS_STEP_MODE : _STEP_MODE;
@@ -3410,6 +3624,11 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // longer has one — a page reload loses emosRef, which is exactly when the
   // restore is needed. See restoreEscrowedBoot.
   const [restoreFile, setRestoreFile] = useState(null);
+  // A successful restore ENDS the run. It undoes the partition write every
+  // later step depends on, and the wizard cannot step backwards, so carrying
+  // on would provision on top of a stock boot image (tested 2026-09-18: a
+  // FireOS run restored at Magisk sat on step 4 as if Patch Boot had held).
+  const [restored, setRestored] = useState(false);
   // The serial read at step 1. Step 9 needs it to ask whether THIS
   // device has connected, rather than inferring it from the device list
   // having grown.
@@ -3469,6 +3688,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     // Step count differs between the flows, so the per-step state has to be
     // rebuilt rather than carried across.
     setFlow(next);
+    if (next !== 'emos') setWipeData(false);
     setStepState((next === 'emos' ? _EMOS_STEPS : _WIZARD_STEPS).map(() => 'pending'));
     setStep(0);
     setLog([]);
@@ -3683,19 +3903,27 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       + '    [ -z "$S" ] && [ -e "$d/$n" ] && S=$(readlink -f "$d/$n"); done; done; '
       + 'echo "NODE=$S"; '
       + '[ -z "$S" ] && exit 0; '
-      + 'WAS=$(mount | grep " /system " ); '
-      + '[ -z "$WAS" ] && mount -o ro "$S" /system 2>&1; '
+      // Mounted on a PRIVATE directory, never on /system. TWRP 3.7 (amonet v2)
+      // makes /system a symlink to /system_root/system, which does not exist
+      // until system_root is mounted, so `mount ... /system` failed with "No
+      // such file or directory" and the read found nothing — measured on the
+      // spare 2026-09-17. It still printed the sentinel, so every v2 device
+      // read as "build unknown" and the release and board checks skipped. If
+      // the partition is already mounted somewhere, read it there.
+      + 'M=$(mount | sed -n "s|^$S on \\([^ ]*\\) .*|\\1|p" | sed -n 1p); OWN=""; '
+      + 'if [ -z "$M" ]; then M=/tmp/em_sysread; mkdir -p "$M"; OWN=1; '
+      + '  mount -o ro "$S" "$M" 2>&1 || echo "MOUNTFAIL"; fi; '
+      + 'echo "MNT=$M"; '
       // FireOS 6 is system-as-root: the tree sits in a /system directory
-      // INSIDE the partition, so mounting system_<slot> at /system puts the
-      // file at /system/system/build.prop. FireOS 5 keeps it at the root.
-      // Prefer the nested one where it exists — emOS's init resolves the same
-      // layout the same way (emos/init/init.c).
-      + 'B=/system/build.prop; '
-      + '[ -f /system/system/build.prop ] && B=/system/system/build.prop; '
+      // INSIDE the partition, so the file is at <mount>/system/build.prop.
+      // FireOS 5 keeps it at the root. Prefer the nested one where it exists —
+      // emOS's init resolves the same layout the same way (emos/init/init.c).
+      + 'B="$M/build.prop"; '
+      + '[ -f "$M/system/build.prop" ] && B="$M/system/build.prop"; '
       + 'echo "PROP=$B"; '
       + 'grep -E "^ro\\.(build\\.version\\.(name|incremental|release)|product\\.(model|name))=" '
       + '  "$B" 2>/dev/null; '
-      + '[ -z "$WAS" ] && umount /system 2>/dev/null; '
+      + '[ -n "$OWN" ] && { umount "$M" 2>/dev/null; rmdir "$M" 2>/dev/null; }; '
       + 'echo _SYSREAD_OK');
   }
 
@@ -3704,6 +3932,12 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     if (!out.includes('_SYSREAD_OK')) return null;
     const pick = k => ((out.match(new RegExp('^' + k + '=(.+)$', 'm')) || [])[1] || '').trim();
     const build = pick('ro\\.build\\.version\\.incremental');
+    if (!build) {
+      // Say what the read saw, so a transcript names the cause instead of
+      // "unknown" — the failure this replaced looked like a quirk of one unit.
+      addLog('  /system read: ' + out.split('\n')
+        .filter(l => /^(NODE|MNT|PROP)=|MOUNTFAIL|mount:/.test(l)).join(' | '), 'warn');
+    }
     return build ? {
       build,
       name:  pick('ro\\.build\\.version\\.name'),
@@ -3878,7 +4112,12 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     // device object, and it IS ro.serialno (set at registration time in
     // em_controller.py), not a separate serial/serial_number/id field.
     if (serial && knownDevices && knownDevices.length) {
-      const match = knownDevices.find(d => d.device_id && d.device_id.includes(serial));
+      // A row with no firmware_ver has never registered: ensure_device_token
+      // creates one when the TLS token is minted, before first contact, so a
+      // run that stopped after that step left a row the device never used.
+      // Refusing on it cost a delete-and-retry on every bench run 2026-09-18.
+      const match = knownDevices.find(d => d.device_id && d.device_id.includes(serial)
+                                        && d.firmware_ver);
       if (match) {
         // Close the live ADB session before throwing — otherwise the
         // transport stays open and _lastUsbDevice keeps pointing at it.
@@ -3954,6 +4193,48 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     return c;
   }
 
+  // Optional factory reset, chosen at step 0 and run at the end of Connect to
+  // TWRP: after the device is in recovery, before EchoMuse and the WiFi
+  // skeleton are written to /data. Later it would destroy what those steps
+  // installed.
+  //
+  // emOS flow ONLY. On FireOS 5 a data wipe also takes f1r30s's state with
+  // it, and the device then needs f1r30s installed again before it will boot
+  // rooted — which this wizard does not do (#269 Part 1).
+  //
+  // `twrp wipe data` is TWRP's Factory_Reset(): everything in /data except
+  // lost+found, misc/vold and (on data-media builds) media/. That includes
+  // /data/nvram, which is safe on biscuit: it has no nvram partition, so the
+  // WIFI file there is only libcustom_nvram's compiled default, and the MACs
+  // and mic/ALS calibration live in idme (measured 2026-09-19). Install
+  // EchoMuse rewrites the WIFI record from this device's /system
+  // (ensureWifiNvram), since emOS never runs the daemon that would.
+  //
+  // Neither command's exit status means anything, so the result is checked
+  // with _wipeVerdict.
+  async function runWipeData(c) {
+    addLog('Wiping /data and /cache (TWRP factory reset)…', 'warn');
+    const out = (await c.shell('twrp wipe data 2>&1; twrp wipe cache 2>&1')).trim();
+    if (out) addLog(`  → ${out.replace(/\n/g, '\n  → ')}`);
+    const probe = await c.shell(
+      'mount /data 2>/dev/null; mount /cache 2>/dev/null; '
+      + 'echo "DATA=$(grep -c \' /data \' /proc/mounts)"; '
+      + 'L=; for d in system app local emos adb; do [ -e /data/$d ] && L="$L $d"; done; '
+      + 'echo "LEFT=$L"; '
+      + 'echo "CACHE=$(ls -A /cache 2>/dev/null | tr \'\\n\' \' \')"; '
+      + 'echo _WIPECHK');
+    const v = _wipeVerdict(probe);
+    if (!v.ok) {
+      throw new Error(`${v.why} The device is still in TWRP and nothing else `
+        + 'has been written. Retry this step, or wipe from TWRP\'s Wipe menu.');
+    }
+    if (v.cacheLeft.length) addLog(`  /cache still holds: ${v.cacheLeft.join(', ')}`, 'warn');
+    // A reformat (non-data-media builds) takes media/ with it, and the install
+    // steps stage their uploads through /sdcard → /data/media/0.
+    await c.shell('mkdir -p /data/media/0');
+    addLog('Wiped.', 'ok');
+  }
+
   // Where the patched kernel is allowed to land, decided from a probe of the
   // device rather than from trusting a symlink.
   //
@@ -3990,6 +4271,53 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // able to read by-name is not evidence of danger, and refusing on it would
   // block any device whose TWRP lays that directory out differently — the same
   // reading the OTA free-space check applies to an unreadable df.
+  // Android boot image v0-v2 stores a 512-byte, NUL-terminated cmdline at
+  // bytes 64..575. The wizard only owns the SELinux argument: replace an
+  // existing enforce token in place, or append permissive if absent, keeping
+  // every other argument and all bytes outside the field untouched.
+  function patchBootCmdline(bootImg) {
+    // Keep the field bounds and terminator rules aligned with em_emos_build.pack
+    // and emos/mkboot.py (whose byte-for-byte parity is tested by test_agrees_with_mkboot).
+    // This wizard additionally replaces enforce: the first occurrence wins.
+    const fieldStart = 64;
+    const fieldEnd = 576;
+    if (!bootImg || bootImg.length < fieldEnd) {
+      throw new Error(
+        `Boot image is too short for its cmdline field (${bootImg?.length || 0} bytes).`);
+    }
+
+    const field = bootImg.slice(fieldStart, fieldEnd);
+    const used = field.indexOf(0);
+    if (used < 0) throw new Error('Boot cmdline has no NUL terminator in its field.');
+    // Map each byte to one character so unrelated, even non-UTF-8, bytes are
+    // copied exactly rather than replaced by the text decoder.
+    const existing = String.fromCharCode(...field.slice(0, used));
+    const argument = 'androidboot.selinux=permissive';
+    let found = false;
+    let cmdline = existing.replace(/(^|[ \t\r\n\v\f])androidboot\.selinux=([^ \t\r\n\v\f]*)/g,
+      (token, space, value) => {
+        if (value !== 'enforce' && value !== 'permissive') {
+          throw new Error('Boot cmdline already specifies a conflicting androidboot.selinux value.');
+        }
+        found = true;
+        return space + argument;
+      });
+    if (!found) {
+      const needsSpace = used > 0 && !/[ \t\r\n\v\f]/.test(existing.at(-1));
+      cmdline += `${needsSpace ? ' ' : ''}${argument}`;
+    }
+    // Keep one byte for the terminator; never truncate a FireOS argument.
+    if (cmdline.length >= field.length) {
+      throw new Error(
+        `Boot cmdline is too long to set ${argument} without truncating FireOS arguments.`);
+    }
+
+    const patched = new Uint8Array(bootImg);
+    patched.set(Uint8Array.from(cmdline, char => char.charCodeAt(0)), fieldStart);
+    patched[fieldStart + cmdline.length] = 0;
+    return patched;
+  }
+
   // Two unlock generations put the boot partition in two different places.
   //
   // amonet v1 INVERTS the by-name map under TWRP: the bare boot_a points at
@@ -4013,8 +4341,9 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // ── Which slot holds stock, and which one emOS goes in ───────────────────
   //
   // An emOS install is a PAIR: the stock boot image we built from, and the
-  // FireOS userspace it was read beside. Which boot slot emOS physically
-  // occupies is just storage — the bootloader is pointed at it afterwards.
+  // FireOS userspace it was read beside. Which slot emOS occupies is NOT a
+  // free choice on amonet v2: its bootloader only ever starts boot_a (#544,
+  // see chooseBootSlots).
   //
   // So the stock boot image is never overwritten. It is the build reference,
   // it is the only way back to FireOS, and it is the only way to rebuild an
@@ -4044,16 +4373,20 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
 
   // The decision, pure so it can be tested without a device.
   //
-  // `suffix` is ro.boot.slot_suffix — the slot the device BOOTED FROM. It is
-  // used only to break the both-stock tie, never to choose where to write: it
-  // says nothing about boot-next, which lives in the BCB.
+  // **amonet v2's bootloader on biscuit starts boot_a whatever the BCB says**
+  // (#544). The BCB only changes androidboot.slot_suffix: measured on the
+  // spare 2026-09-17, BCB B-active booted the emOS image in boot_a with
+  // `slot_suffix=_b`, and the reporter's B-active boot ran the stock image in
+  // boot_a while a marker stamped into boot_b never appeared. So emOS always
+  // goes in slot A, and the stock image is KEPT in slot B — copied there from
+  // A first when A holds the only one.
+  //
+  // `suffix` (ro.boot.slot_suffix) is therefore no guide to what is running,
+  // and is not used to choose anything.
   function chooseBootSlots(slots, suffix) {
-    const other = (s) => (s === 'a' ? 'b' : 'a');
-    const stock = ['a', 'b'].filter(s => slots[s].state === 'stock');
-    const booted = /^_([ab])$/.test(suffix || '') ? suffix.slice(1) : '';
-
-    if (!stock.length) {
-      const both = ['a', 'b'].every(s => slots[s].state === 'ours');
+    const st = (s) => slots[s].state;
+    if (st('a') !== 'stock' && st('b') !== 'stock') {
+      const both = st('a') === 'ours' && st('b') === 'ours';
       return { ok: false, reason: both
         ? 'Both boot slots already hold emOS, so there is no stock FireOS boot '
           + 'image on this device to build from or fall back to. Restore your '
@@ -4062,20 +4395,23 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
           + 'nothing to build an emOS image from. Nothing has been read or '
           + 'written.' };
     }
-
-    // Both stock: keep the one the device boots today and take the other, so
-    // the image the user is running is the one preserved.
-    const donor = stock.length === 2 ? (booted || 'a') : stock[0];
-    const target = other(donor);
-
-    if (slots[target].state === 'stock' && stock.length !== 2) {
-      return { ok: false, reason: 'Internal error choosing boot slots.' };
-    }
-    if (!slots[target].dev) {
+    if (!slots.a.dev) {
       return { ok: false, reason:
-        `Slot ${target.toUpperCase()} is where emOS would go, but `
-        + `/dev/block/by-name/boot_${target} did not resolve to a block device. `
-        + 'Nothing has been read or written.' };
+        'Slot A is where emOS has to go — it is the only slot this bootloader '
+        + 'starts — but /dev/block/by-name/boot_a did not resolve to a block '
+        + 'device. Nothing has been read or written.' };
+    }
+
+    // Stock in A: build from it, and make sure B keeps a copy before A is
+    // overwritten. Stock only in B: build from B, which stays as it is.
+    const donor = st('a') === 'stock' ? 'a' : 'b';
+    const preserve = donor === 'a' && st('b') !== 'stock';
+    if (preserve && !slots.b.dev) {
+      return { ok: false, reason:
+        'Slot A holds the only stock FireOS boot image and emOS has to replace '
+        + 'it, but there is no slot B to keep a copy in '
+        + '(/dev/block/by-name/boot_b did not resolve). Nothing has been read '
+        + 'or written.' };
     }
 
     // The system partition PAIRED with the donor — stamped into the image so
@@ -4090,11 +4426,17 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
         + 'cannot be built without knowing which one it is.' };
     }
 
-    return { ok: true, donor, target,
-             donorDev: slots[donor].dev, targetDev: slots[target].dev,
+    const kept = preserve
+      ? `stock FireOS is copied to slot B and kept there (slot B holds ${st('b')} today)`
+      : donor === 'a'
+        ? 'slot B already holds a stock FireOS image and keeps it'
+        : 'stock FireOS stays in slot B';
+    return { ok: true, donor, target: 'a',
+             donorDev: slots[donor].dev, targetDev: slots.a.dev,
+             preserveDev: preserve ? slots.b.dev : '',
              systemPart: Number(sysPart),
-             reason: `stock FireOS stays in slot ${donor.toUpperCase()}; emOS goes `
-                   + `in slot ${target.toUpperCase()}, built against system_${donor} `
+             reason: `emOS goes in slot A, the slot this bootloader starts; ${kept}; `
+                   + `built from slot ${donor.toUpperCase()} against system_${donor} `
                    + `(p${sysPart})` };
   }
 
@@ -4253,28 +4595,35 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
         + `so nothing is being patched or flashed.`);
     }
 
-    // Check the CURRENT cmdline before touching anything — magiskboot's
-    // own unpack log already echoes CMDLINE [...] for the unmodified
-    // image, so use that as the source of truth instead of re-deriving
-    // it from the manual byte-offset patch logic. If a previous wizard
-    // run already flipped SELinux to permissive, re-running the blind
-    // overwrite is unnecessary risk (another write to a device with no
-    // real recovery path if it goes wrong) for zero benefit.
+    // Escrow before anything writes (#468). The emOS flow has always handed the
+    // operator the original; this flow pulled the same bytes into the page and
+    // kept them only in /tmp/work, which is gone after the first reboot — the
+    // moment someone finds they need it. Here rather than as a step of its own
+    // because the image is already in hand, and a new step renumbers every
+    // index this flow hardcodes. emosRef/emosTarget are the restore's inputs in
+    // both flows.
+    const md5 = await _md5Hex(bootImg);
+    setEmosRef({ bytes: bootImg, md5, target: boot.target });
+    setEmosTarget(boot.target);
+    _downloadBytes(bootImg, `echomuse-boot-before-patch-${md5.slice(0, 8)}.img`);
+    addLog(`Escrowed ${boot.target} as it is now, md5 ${md5}. A copy has been downloaded `
+         + 'to your computer. KEEP IT — from TWRP it puts this partition back as it was.', 'warn');
+
+    // Validate and transform the actual field even when magiskboot's log
+    // contains "permissive": it may be a substring or follow an enforce token.
+    // Only skip the write if the bounded patch leaves the image unchanged.
+    const patched = patchBootCmdline(bootImg);
+    const cmdlineAlreadyPermissive = patched.every((byte, i) => byte === bootImg[i]);
+    // Unpack the current image for its ramdisk; the log remains diagnostic.
     addLog('Checking current boot image cmdline…');
     const probeOut = await c.shell('cd /tmp/work && /tmp/bin/magiskboot unpack boot.img 2>&1');
     addLog(probeOut || '(done)');
-    const cmdlineAlreadyPermissive = probeOut.includes('androidboot.selinux=permissive');
 
     let workImg = 'boot.img';
     if (cmdlineAlreadyPermissive) {
       addLog('cmdline already has androidboot.selinux=permissive — skipping cmdline patch.', 'warn');
     } else {
       addLog('Patching cmdline for SELinux permissive…');
-      const patched = new Uint8Array(bootImg);
-      const newCmd  = new TextEncoder().encode('bootopt=64S3,32N2,64N2 androidboot.selinux=permissive');
-      patched.fill(0, 64, 576);
-      patched.set(newCmd, 64);
-
       addLog('Pushing patched image…');
       await c.push('/tmp/work/boot_patched.img', patched, pct => setProgress({ label: 'Pushing boot image', pct }));
       setProgress(null);
@@ -5311,6 +5660,8 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       addLog(`Pushing ${file.name} to /sdcard/server_new…`);
       buf = await file.arrayBuffer();
     }
+    const verdict = _serverBinaryVerdict(buf);
+    if (!verdict.ok) throw new Error(`${verdict.reason} Nothing has been installed.`);
     await c.push('/sdcard/server_new', new Uint8Array(buf),
       pct => setProgress({ label: 'Uploading binary', pct }));
     setProgress(null);
@@ -5653,6 +6004,80 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     addLog('Recovery environment ready.', 'ok');
   }
 
+  // emOS flow: make sure the WiFi driver's NVRAM record exists.
+  //
+  // The kernel reads /data/nvram/APCFG/APRDEB/WIFI at WLAN init (country,
+  // 5GHz enable, band-edge TX power) and falls back to the driver's built-in
+  // values without it. On FireOS nvram_daemon writes it at every boot; emOS
+  // never runs that daemon, so a device whose /data was wiped — the wizard's
+  // option, or a factory reset — runs on the fallback, which has not been
+  // measured against stock. Writing stock's record removes the question.
+  //
+  // Biscuit has no nvram partition, so stock's record is only ever the
+  // compiled default `stWifiCfgDefault` from libcustom_nvram.so plus
+  // _nvramRecord's trailer — identical on EFF and VVV and in both FireOS 5 and
+  // 6's library (2026-09-19). It is read from THIS device's /system, so nothing
+  // of Amazon's ships with EchoMuse.
+  //
+  // Never overwrites: a record that exists is the one stock wrote. A failure
+  // warns and carries on — WiFi works on the fallback (the spare ran on it).
+  async function ensureWifiNvram(c) {
+    const REC = '/data/nvram/APCFG/APRDEB/WIFI';
+    const have = (await c.shell(`[ -s ${REC} ] && echo HAVE || echo NONE`)).trim();
+    if (have === 'HAVE') {
+      addLog('  WiFi NVRAM record present — kept.');
+      return;
+    }
+    const warn = why => addLog(`WiFi NVRAM record not written: ${why} WiFi still works on `
+      + 'the driver\'s built-in defaults.', 'warn');
+    // Same partition resolution and private mount as _sysreadScript. FireOS 6
+    // keeps the library under the nested system/ and in vendor/lib; FireOS 5
+    // at the root in lib/.
+    const out = await c.shell(
+      'SLOT=$(getprop ro.boot.slot_suffix); S=""; '
+      + 'for d in /dev/block/platform/*/by-name /dev/block/by-name; do '
+      + '  for n in "system$SLOT" system_a system; do '
+      + '    [ -z "$S" ] && [ -e "$d/$n" ] && S=$(readlink -f "$d/$n"); done; done; '
+      + '[ -z "$S" ] && { echo NOSYSTEM; exit 0; }; '
+      + 'M=$(mount | sed -n "s|^$S on \\([^ ]*\\) .*|\\1|p" | sed -n 1p); OWN=""; '
+      + 'if [ -z "$M" ]; then M=/tmp/em_sysread; mkdir -p "$M"; OWN=1; '
+      + '  mount -o ro "$S" "$M" 2>&1 || echo "MOUNTFAIL"; fi; '
+      + 'L=""; for p in system/vendor/lib system/lib vendor/lib lib; do '
+      + '  [ -z "$L" ] && [ -f "$M/$p/libcustom_nvram.so" ] && L="$M/$p/libcustom_nvram.so"; done; '
+      + 'echo "LIB=$L"; [ -n "$L" ] && cp "$L" /tmp/em-nvram.so && echo _NVLIB_OK; '
+      + '[ -n "$OWN" ] && { umount "$M" 2>/dev/null; rmdir "$M" 2>/dev/null; }; true');
+    if (!out.includes('_NVLIB_OK')) {
+      warn(out.includes('NOSYSTEM') ? 'no system partition found.'
+         : out.includes('MOUNTFAIL') ? '/system would not mount.'
+         : 'libcustom_nvram.so is not on /system.');
+      return;
+    }
+    const data = _elfSymbol(await c.pull('/tmp/em-nvram.so'), 'stWifiCfgDefault');
+    await c.shell('rm -f /tmp/em-nvram.so');
+    if (!data || data.length !== 512) {
+      warn(`the library\'s WiFi default is ${data ? data.length + ' bytes, not 512' : 'missing'}.`);
+      return;
+    }
+    const rec = _nvramRecord(data);
+    await c.push('/tmp/em-wifi-nvram', rec);
+    // Ownership and modes as stock's init and libnvram leave them: root:system
+    // (0:1000, numeric because recovery's busybox has no Android group names),
+    // 2771 on the directories, 660 on the record.
+    const w = (await c.shell(
+      '( mkdir -p /data/nvram/APCFG/APRDEB && '
+      + 'chown 0:1000 /data/nvram /data/nvram/APCFG /data/nvram/APCFG/APRDEB && '
+      + 'chmod 2771 /data/nvram /data/nvram/APCFG /data/nvram/APCFG/APRDEB && '
+      + `cp /tmp/em-wifi-nvram ${REC} && chown 0:1000 ${REC} && chmod 660 ${REC} && `
+      + 'echo _NVW_OK ) 2>&1; rm -f /tmp/em-wifi-nvram')).trim();
+    const back = w.includes('_NVW_OK') ? await c.pull(REC) : null;
+    if (!back || back.length !== rec.length || back.some((b, i) => b !== rec[i])) {
+      await c.shell(`rm -f ${REC}`);
+      warn(`the write did not verify${w.includes('_NVW_OK') ? '' : ` (${w})`}, so it was removed.`);
+      return;
+    }
+    addLog('  WiFi NVRAM record written from this device\'s own /system (stock default).', 'ok');
+  }
+
   // Step 2 — escrow. THE MOST IMPORTANT STEP IN THE FLOW, because it is the
   // only one that makes every step after it reversible.
   async function runEscrowBoot(c) {
@@ -5768,8 +6193,11 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       addLog('  amonet unlock confirmed in the partition map', 'ok');
     }
 
-    addLog(`Reading ${boot.target} off the device (10–20s)…`);
-    const ddOut = await c.shell(`dd if=${boot.target} of=/tmp/emos_ref.img bs=1048576 2>&1`);
+    // The escrow is the STOCK image — the build input and the undo. On v2 that
+    // is the donor slot, which is not necessarily the one LK reports booting.
+    const refDev = plan ? plan.donorDev : boot.target;
+    addLog(`Reading ${refDev} off the device (10–20s)…`);
+    const ddOut = await c.shell(`dd if=${refDev} of=/tmp/emos_ref.img bs=1048576 2>&1`);
     addLog(ddOut.trim() || '(done)');
     const ref = await c.pull('/tmp/emos_ref.img');
     await c.shell('rm -f /tmp/emos_ref.img');
@@ -5777,13 +6205,13 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     const magic = new TextDecoder().decode(ref.slice(0, 8));
     if (magic !== 'ANDROID!') {
       throw new Error(
-        `Read ${ref.length} bytes from ${boot.target} and it does not start with `
+        `Read ${ref.length} bytes from ${refDev} and it does not start with `
         + `"ANDROID!" (got "${magic.replace(/[^\x20-\x7e]/g, '.')}"). That is not a boot `
         + `image, so nothing is being escrowed or flashed.`);
     }
     const md5 = await _md5Hex(ref);
     addLog(`Escrowed ${(ref.length / 1024 / 1024).toFixed(1)} MB, md5 ${md5}`, 'ok');
-    setEmosRef({ bytes: ref, md5, target: boot.target });
+    setEmosRef({ bytes: ref, md5, target: refDev });
 
     // Handed to the operator as a file as well as held in the page. The copy
     // in the browser is the convenient one; the one on their disk is the one
@@ -6212,6 +6640,30 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
         + 'problem, not a device one. Re-run Build emOS.');
     }
 
+    // Keep the stock image before slot A is overwritten (#544): emOS has to
+    // go in A, and when A holds the only stock image it is copied to B first,
+    // through the same verified write. B held nothing worth keeping, and A is
+    // not touched unless the copy verified.
+    if (emosPlan && emosPlan.ok && emosPlan.preserveDev) {
+      if (!emosRef || emosRef.target !== emosPlan.donorDev) {
+        throw new Error('The escrowed image is not the one from slot A, so it cannot be '
+          + 'copied to slot B. Nothing has been written. Re-run the escrow step.');
+      }
+      let perr = await _writeBootPartition(
+        c, emosPlan.preserveDev, emosRef.bytes, emosRef.md5, 'stock image (copy to slot B)');
+      if (perr) {
+        addLog(`${perr}`, 'error');
+        addLog('Retrying the copy once…', 'warn');
+        perr = await _writeBootPartition(
+          c, emosPlan.preserveDev, emosRef.bytes, emosRef.md5, 'stock image (copy to slot B, retry)');
+      }
+      if (perr) {
+        throw new Error(`${perr}\n\nSlot A has NOT been touched and still boots stock FireOS. `
+          + 'Slot B held no stock image before this, so nothing was lost.');
+      }
+      addLog('Stock FireOS is now kept in slot B.', 'ok');
+    }
+
     let err = await _writeBootPartition(
       c, target, emosImage.bytes, emosImage.md5, 'emOS image');
     if (err) {
@@ -6281,7 +6733,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       }
       if (!bytes) {
         throw new Error('No escrowed image in this session. Choose the '
-          + 'echomuse-stock-boot-*.img file downloaded at the escrow step.');
+          + 'echomuse-*.img file downloaded at the escrow step.');
       }
       // The same guard the escrow and the patch step apply. Restoring is the
       // one operation nobody will check afterwards, so a file that is not a
@@ -6307,6 +6759,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       addLog('Escrowed image restored and verified against the partition. The '
            + 'device will boot exactly as it did before this run. Everything '
            + 'installed on /data is untouched.', 'ok');
+      setRestored(true);
     } catch (e) {
       addLog(`Restore failed: ${e.message}`, 'error');
     } finally {
@@ -6336,7 +6789,18 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     addLog('The ring fills as the boot progresses. Pick the device\'s serial '
          + 'port when the browser asks — it appears a few seconds in.', 'warn');
 
-    const port = await navigator.serial.requestPort();
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+    } catch (e) {
+      // Cancelled, or the picker timed out before emOS's port appeared.
+      if (e?.name === 'NotFoundError') {
+        throw new Error('No serial port was chosen. The device is still booting '
+          + 'emOS — click Connect Console once its port shows in the picker '
+          + '(about 30 seconds after the reboot).');
+      }
+      throw e;
+    }
     await port.open({ baudRate: 115200 });
     const con = new _EmosConsole(port, addLog);
     setEmosConsole(con);
@@ -6396,15 +6860,27 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
   // unexplained failure when someone types a name from memory.
   async function scanWifiConsole(con) {
     if (!con) throw new Error('No serial console — re-run the Reboot and Watch step.');
-    const started = await con.run('wpa_cli -p /data/misc/wifi/sockets -i wlan0 scan');
-    if (!/OK/.test(started)) {
+    const wpa = 'wpa_cli -p /data/misc/wifi/sockets -i wlan0';
+    // Early in the boot the supplicant is not answering yet, so wait for it
+    // rather than fail a click the operator could not have known was early.
+    for (let i = 0; i < 20 && !/PONG/.test(await con.run(`${wpa} ping`)); i++) {
+      if (i === 0) addLog('Waiting for the WiFi radio to come up…');
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    const started = await con.run(`${wpa} scan`);
+    // FAIL-BUSY is a scan ALREADY running — typically the supplicant looking
+    // for a saved network by itself — not a failure: its results are as good
+    // as ours. Seen on the spare 2026-09-18, where the first click failed and
+    // the second worked.
+    if (/FAIL-BUSY/.test(started)) {
+      addLog('A scan is already running — using its results.');
+    } else if (!/OK/.test(started)) {
       throw new Error(`wpa_cli would not start a scan (said "${started.trim() || 'nothing'}").`);
     }
     // A scan takes a few seconds; asking too early returns the previous
     // results or none at all.
     await new Promise(r => setTimeout(r, 4000));
-    const raw = await con.run(
-      'wpa_cli -p /data/misc/wifi/sockets -i wlan0 scan_results', 20000);
+    const raw = await con.run(`${wpa} scan_results`, 20000);
     const nets = parseScanResults(raw);
     if (!nets.length) {
       addLog('The scan returned no networks. The radio is up — try again, or '
@@ -6687,7 +7163,8 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
       }
       if (isEmos) switch (stepIdx) {
         case 0: c = await runConnectAndroid(); break;
-        case 1: c = await runConnectTwrp(); break;
+        case 1: c = await runConnectTwrp();
+                if (wipeData) await runWipeData(c); break;
         case 2: await runEscrowBoot(c); break;
         // Every TWRP step prepares its own environment rather than inheriting
         // step 2's. The su shim and the /sdcard symlink both live in the
@@ -6696,6 +7173,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
         // steps below are the shared FireOS ones that assume both. It is
         // idempotent and costs three shell round trips.
         case 3: await prepareTwrpForInstall(c);
+                await ensureWifiNvram(c);
                 await runInstallEchoMuse(c, binaryFile, useLatest); break;
         case 4: await prepareTwrpForInstall(c);
                 await runInstallOwwAssets(c); break;
@@ -6786,7 +7264,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     const alreadyThere = isEmos && step === 1 && adb
                       && _bannerMode(adb.banner) === 'twrp';
     if ((!autoSteps.has(step) && !alreadyThere)
-        || running || stepState[step] !== 'pending') return;
+        || running || restored || stepState[step] !== 'pending') return;
     // The emOS build's default source is the release, so the auto path has to
     // say so — `useLatest` is undefined otherwise and it would ask for a file
     // nobody has chosen.
@@ -6798,7 +7276,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
     addLog(`"${STEPS[step].label}" needs an ADB connection and there isn't one — `
          + `the previous step disconnected the device. Reconnect and click Retry.`, 'error');
     markStep(step, 'error');
-  }, [step, running, adb]);
+  }, [step, running, adb, restored]);
 
   const cur    = STEPS[step];
   const isDone = step === STEPS.length - 1 && stepState[step] === 'done';
@@ -6901,9 +7379,21 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
               <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
                 {step + 1}. {cur.label}
               </div>
-              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--text2)', lineHeight: 1.6 }}>{cur.desc}</div>
+              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--text2)', lineHeight: 1.6 }}>{cur.desc}{isEmos && cur.id === 'connect_twrp' && wipeData && ' Then wipes /data and /cache.'}</div>
             </div>
 
+            {/* After a restore the run is over: every step control is hidden
+                and this is all that is offered. See `restored`. */}
+            {restored && (
+              <div style={{ margin: '6px 0 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 11, color: 'var(--ok)', lineHeight: 1.7 }}>
+                  Device restored. Reboot it from TWRP (Reboot → System), then start the wizard again.
+                </div>
+                <div><Pill accent onClick={onClose}>Close</Pill></div>
+              </div>
+            )}
+
+            {!restored && (<>
             {/* WebUSB pre-flight. Shown on step 0 rather than at the first
                 click, because the point is to be read before a device is
                 unboxed — the throw in requestDevice says the same thing to
@@ -6954,6 +7444,13 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                     </div>
                   ))}
                 </div>
+                {isEmos && <div style={{ marginTop: 10 }}>
+                  <Toggle label="Wipe data and cache first"
+                    sub={wipeData
+                      ? 'Erases /data and /cache in TWRP: WiFi, settings and anything installed. Cannot be undone.'
+                      : 'Off: the device keeps its data.'}
+                    value={wipeData} onChange={setWipeData}/>
+                </div>}
               </div>
             )}
 
@@ -6963,7 +7460,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 {upcoming.map(s => (
                   <div key={s.id} className="em-wizard-upcoming__item">
                     <span className="em-wizard-upcoming__name">{s.label}</span>
-                    <span className="em-wizard-upcoming__desc">{s.desc}</span>
+                    <span className="em-wizard-upcoming__desc">{s.desc}{isEmos && s.id === 'connect_twrp' && wipeData && ' Then wipes /data and /cache.'}</span>
                   </div>
                 ))}
               </div>
@@ -7107,7 +7604,10 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 operator has nothing else to try. It needs ADB, so it is only
                 useful while the device is still in TWRP; that is exactly the
                 state both failures leave it in. */}
-            {isEmos && (step === 6 || step === 7)
+            {/* FireOS: steps 2-4, the TWRP steps after its escrow (#468). Magisk
+                at step 3 rewrites the boot partition too, so the restore undoes
+                both. Not offered once Android is up — no TWRP, no restore. */}
+            {(isEmos ? (step === 6 || step === 7) : (step >= 2 && step <= 4))
               && stepState[step] === 'error' && !running && (
               <div className="em-inset" style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
                 <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--text2)' }}>
@@ -7118,7 +7618,7 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 {!emosRef && (
                   <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 10, color: 'var(--warn)' }}>
                     This session has no escrowed image — choose the
-                    echomuse-stock-boot-*.img downloaded at step 3.
+                    {isEmos ? ' echomuse-stock-boot-*.img' : ' echomuse-boot-before-patch-*.img'} downloaded at step 3.
                   </div>
                 )}
                 <input type="file" accept=".img"
@@ -7161,7 +7661,11 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                   not boot is what turns a recoverable one into a case-opening job.
                 </p>
                 <div style={{ marginTop: 12 }}>
-                  <Pill accent onClick={() => runStep(7)}>Reboot and Connect Console</Pill>
+                  {/* Once the reboot has been sent there is no ADB handle and
+                      runRebootAndWatch skips it, so a second click only opens
+                      the port picker — say so. The picker times out if emOS
+                      takes longer to appear than the operator waits. */}
+                  <Pill accent onClick={() => runStep(7)}>{adb ? 'Reboot and Connect Console' : 'Connect Console'}</Pill>
                 </div>
               </div>
             )}
@@ -7245,6 +7749,8 @@ function ProvisionWizard({ token, onClose, knownDevices }) {
                 </div>
               </div>
             )}
+
+            </>)}
 
             {/* Progress bar — accent slate, same as toggles/sliders */}
             {progress && (
@@ -7928,8 +8434,8 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                 cursor: disabled ? 'default' : 'pointer',
                 transition: 'border-color 0.15s, background 0.15s',
               }}>
-                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 600, color: 'var(--lcd-line)' }}>{m.label}</div>
-                <div style={{ fontFamily: mono, fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{m.value}</div>
+                <div title={m.label} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 600, color: 'var(--lcd-line)', ..._ROW_TEXT, display: 'block' }}>{m.label}</div>
+                <div title={m.value} style={{ fontFamily: mono, fontSize: 9, color: 'var(--muted)', marginTop: 2, ..._ROW_TEXT, display: 'block' }}>{m.value}</div>
               </div>
             ))}
             {[...customModels, ...(orphanModel ? [orphanModel] : [])].map(m => (
@@ -7938,12 +8444,12 @@ function DeviceConfigForm({ config, onChange, disabled, sections, onScopeChange,
                   ? 'linear-gradient(160deg,var(--accent-tint),var(--accent-line))'
                   : 'linear-gradient(160deg,var(--raised),var(--surface))',
                 border: `1px solid ${config.owwModel === m.path ? 'var(--accent)' : 'var(--border-soft)'}`,
-                borderRadius: 8, padding: '8px 10px', position: 'relative',
+                borderRadius: 8, padding: '8px 22px 8px 10px', position: 'relative', minWidth: 0,
                 cursor: disabled ? 'default' : 'pointer',
                 transition: 'border-color 0.15s, background 0.15s',
               }}>
-                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 600, color: 'var(--lcd-line)' }}>{wwModelLabel(m.path)}</div>
-                <div style={{ fontFamily: mono, fontSize: 9, color: m.missing ? 'var(--error)' : 'var(--muted)', marginTop: 2 }}>
+                <div title={wwModelLabel(m.path)} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 600, color: 'var(--lcd-line)', ..._ROW_TEXT, display: 'block' }}>{wwModelLabel(m.path)}</div>
+                <div title={m.file} style={{ fontFamily: mono, fontSize: 9, color: m.missing ? 'var(--error)' : 'var(--muted)', marginTop: 2, ..._ROW_TEXT, display: 'block' }}>
                   {m.missing ? 'missing file' : `custom · ${m.file}`}
                 </div>
                 {!disabled && !m.missing && config.owwModel !== m.path && (
@@ -8345,15 +8851,15 @@ function DeployAllModal({ release, devices, deployState, onStarted, onDismiss, o
               const s = statusFor(id);
               return (
                 <div key={id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 11, padding: '5px 0', borderBottom: '1px solid var(--hairline)' }}>
-                  <span style={{ color: 'var(--text2)' }}>{label(byId[id])}</span>
-                  <span style={{ color: s.color }}>{s.text} {byId[id]?.firmware_ver ? `· ${byId[id].firmware_ver}` : ''}</span>
+                  <span title={label(byId[id])} style={{ color: 'var(--text2)', ..._ROW_TEXT }}>{_middleEllipsis(label(byId[id]), 28)}</span>
+                  <span title={byId[id]?.firmware_ver || undefined} style={{ color: s.color, ..._ROW_SIDE }}>{s.text} {byId[id]?.firmware_ver ? `· ${_middleEllipsis(byId[id].firmware_ver, 16, 7)}` : ''}</span>
                 </div>
               );
             })}
             {(view.skipped || []).map(s => (
               <div key={s.device_id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 11, padding: '5px 0', borderBottom: '1px solid var(--hairline)' }}>
-                <span style={{ color: 'var(--muted)' }}>{label(byId[s.device_id])}</span>
-                <span style={{ color: 'var(--muted)' }}>skipped — {SKIP_REASONS[s.reason] || s.reason}</span>
+                <span title={label(byId[s.device_id])} style={{ color: 'var(--muted)', ..._ROW_TEXT }}>{_middleEllipsis(label(byId[s.device_id]), 28)}</span>
+                <span style={{ color: 'var(--muted)', ..._ROW_SIDE }}>skipped — {SKIP_REASONS[s.reason] || s.reason}</span>
               </div>
             ))}
             {(view.started || []).length === 0 && (view.skipped || []).length === 0 && (

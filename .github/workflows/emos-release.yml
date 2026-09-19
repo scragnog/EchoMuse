@@ -265,6 +265,8 @@ jobs:
           /tmp/wpacheck
           cc -O2 -o /tmp/cmdlinecheck emos/init/cmdlinecheck.c
           /tmp/cmdlinecheck
+          cc -O2 -o /tmp/serialcheck emos/init/serialcheck.c
+          /tmp/serialcheck
 
       # Same rule as the firmware release: the notes come from the ANNOTATED
       # tag, because whoever reads them is deciding whether to reflash a boot
@@ -273,6 +275,10 @@ jobs:
       - name: Release notes from the tag annotation
         run: |
           git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" != tag ]; then
+            echo "::error::$GITHUB_REF_NAME is a lightweight tag; it has no release notes. Re-tag with git tag -a."
+            exit 1
+          fi
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > /tmp/emos-notes.md
           echo "--- notes that will be published ---"
           cat /tmp/emos-notes.md
@@ -293,6 +299,10 @@ jobs:
             emos/build/bb/busybox-*.tar.bz2
             emos/build/bb/busybox-LICENSE
           body_path: /tmp/emos-notes.md
-          generate_release_notes: true
+          # No generated list. GitHub's is every PR merged anywhere in the repo
+          # between two emos-v* tags — controller, docs, firmware — with "New
+          # Contributors" credits for work that is not in emOS (emos-v0.7
+          # credited a wake word cache fix). The tag annotation is the notes.
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

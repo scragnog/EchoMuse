@@ -652,6 +652,60 @@ regmap is readable at `/sys/kernel/debug/regmap/2-0018/registers`
 contends for the same PCM and wedged a device hard enough to need a power
 cycle.
 
+**MIXER CONTROL IDS ARE NOT STABLE ACROSS KERNELS, and addressing a control by
+number is therefore a bug waiting for a new board.** FireOS 6's kernel exposes
+two more controls than FireOS 5's, early enough in the list that everything
+after shifts by two. Measured 2026-09-16 on two Dots running emOS side by side:
+
+|  | FireOS 5 | FireOS 6 |
+|---|---|---|
+| controls in the mixer | 239 | 241 |
+| `HPR Output Mixer R_DAC Switch` | 234 | 236 |
+| `ADC_A Left Ip Select ADC_A DIF1_L switch` | 223 | 225 |
+
+Until 2026-09-17 `codec.Routes` addressed all ten of its DAPM switches by
+number, so on every FireOS 6 device all ten landed two places early: 234 set
+`Left Input Mixer IN3_L P Switch` and the DAC was never connected to the output
+mixer (silence), while the eight capture writes set the single-ended IN2 inputs
+when the array is on the differential DIF1 ones. Reported as #546 by
+@jthoward64 and reproduced here on 2026-09-16. The shift starts after id 160,
+so mute (105–160), volume (61), the amp (5) and mic gain were right on both
+kernels; only the routes were not.
+
+**The failure is SILENT by construction and that is the general lesson.**
+Writing `1` to the wrong control is a perfectly valid write — `tinymix` exits
+0, the route loop's failure count stays 0, and its own "audio may be silent"
+warning cannot fire. A device logs a clean boot and plays nothing. This is the
+same shape as the mute LED being on a different GPIO than Amazon's HAL
+believed, and as `event2` being the volume button on biscuit and a touchscreen
+on checkers: **resolve by NAME, and let a name that is absent be loud.**
+
+**Fixed: every mixer write goes through `internal/bindings/mixer`**, which
+calls tinyalsa's `mixer_get_ctl_by_name` — the lookup is native, a control this
+board lacks is an error, and there is no process spawn per write. The
+firmware no longer runs `tinymix` at all (`guard_test.go` fails on
+`exec.Command("tinymix"`), and `start_server.sh` names its controls too
+(`controller/tests/test_mixer_names.py`). Four things to keep:
+
+- **Call only functions both devices' `libtinyalsa.so` export.** The NDK
+  sysroot header is tinyalsa 2.x and the devices are not; a symbol the device
+  library lacks stops the binary loading, which is a crash-loop and an A/B
+  rollback. Checked 2026-09-17 with `llvm-nm -D` against both libraries; do
+  it again when adding a call.
+- **The names are measured**, present and unique on both kernels and on stock
+  FireOS 5 (32 controls). `device/tools/mixer_probe` reads any list of them
+  through the same code path, for comparing against `tinymix -D 0 <name>`.
+- **`tinymix` accepts names on both kernels' binaries**, quoted, which is what
+  the script relies on.
+- **Verified on the bench 2026-09-17 on both kernels**, with the installed
+  server paused and the routes opened first: the new binary closed all ten,
+  the DAC path registers (`003f`, `0089`, `008c/8d`) returned to their
+  running values, and capture was live (VAD rms 0.0019–0.0023 against the
+  dead-path 0.00035). On EFF (FireOS 5, the fleet's kernel) the full 239-control
+  listing under the new binary matched the old one except a timestamp control.
+  The four mic ADCs (`tlv320aic3101`, `0-0018`..`0-001b`) have no regmap, so
+  capture is proven by signal, not by register.
+
 ## The BLE proxy, and what it costs the device running it
 
 Passive HCI scan over `/dev/stpbt`, forwarded to the controller and
@@ -810,6 +864,24 @@ not survive a reboot — hence applying it in the binary, which re-applies every
 start. Do NOT write `cpu1/online` directly: HPS re-parks it within
 `down_times`, giving a setting that appears to work and silently stops.
 
+**Board tuning under emOS (`pkg/board`, 2026-09-17).** Nothing in emOS applies
+what FireOS's `thermal_manager` and init did, so the kernel's compiled-in
+defaults ran instead — measured against a stock device: the FireOS 6 kernel
+scales cores at 50/30% (FireOS 5: 80/70), CPU throttling starts at 65°C (stock
+84°C) and the board sensor `tmp103` at 50.25°C (stock 56.5°C). `server
+platform-init`, run once per boot by `start_server.sh` on emOS only, applies
+stock's values. Three rules: the board is identified POSITIVELY by idme
+`device_type_id` (the device tree says only `MT8163`, as every MT8163 product
+does — and idme values are NUL-terminated); every zone and cooler the profile
+names is resolved by type before ANY write, else nothing is written; and every
+value is read back. An unknown board keeps the kernel defaults, which are the
+stricter setting — the wrong profile on the wrong device is the failure to
+avoid. The script greps the binary for `EM_PLATFORM_INIT_V1` first, because a
+binary without the mode ignores the argument and starts a second server.
+Stock's `.tp/thermal.conf` is MediaTek's obfuscated format (char minus
+position mod 10); Amazon's `thermal.policy.conf` is plaintext. The
+`thermal_budget` cooler's `levels` are written 0-based and read back 1-based.
+
 **`cpuPct` is a share of ONLINE capacity**, derived from the aggregate
 `/proc/stat` line. The same absolute work therefore reads as *half* the
 percentage once a second core comes up — measured on Lounge, 51% on one core
@@ -902,6 +974,48 @@ Playback ring clearing waits for the device's `playback_stats` (`device.playback
 - **Mute ring** (solid red) is device-sovereign — enforced since v2.7.8: controller LED writes are recorded but not painted while muted. Needed because muting now terminates an active turn (controller cancels + `speaker_flush` on `mute_state`), so the cancelled turn's LED cleanup arrives after the red ring is up.
 - **Volume arc** owns the ring for its 2s display window against *animations* — they repaint ~every 100ms and would otherwise stomp the arc within one frame. It does **not** outrank a deliberate action-button press: a dot release calls `CancelVolumeDisplay()`, which drops the hold so the listening frame paints (it deliberately does not repaint — the controller's frame lands within an RTT, and clearing to black would put a dark gap between the two). The arc is protection from repaint churn, not from the user. On expiry the ring repaints the latest `baseLEDs` frame (`onDisplayExpire` → `paintBaseLEDs`), handing back mid-animation. The arc shows only for physical volume button presses (v2.9.5): remote sets and the boot-time volume seed apply silently (`volumeController.Set` showRing flag). The mute-button LED is sysfs gpio444, active-high — not the gpio445 in Amazon's `libled_hal.so`, whose constant is off by one and whose pad is muxed away (stock drives the pin via the `/dev/mtgpio` ioctl; see `mute_button.go`).
 
+## Where the serial comes from
+
+The whole fleet is keyed on it, so a missing one is not cosmetic: every device
+that cannot resolve a serial registers as `unknown-device` and they collide
+with each other. Three sources, in `GetSerialNo`, and emOS's `init.c` mirrors
+the same order for the same reasons:
+
+1. **`/proc/idme/serial`** — Amazon's ID Manager, exported by their kernel
+   driver and world-readable. The hardware value, needing no property service
+   and no bootloader argument, and it answers identically under FireOS, emOS
+   and TWRP. Verified 2026-09-15 on a v1 (matching `getprop` exactly) and a v2
+   in recovery.
+2. **`getprop ro.serialno`** — needs Android's property service, so FireOS only.
+3. **`androidboot.serialno` on the kernel cmdline** — needs Android's init NOT
+   to have run, since it consumes every `androidboot.*` argument and strips it.
+
+**idme leads because the cmdline is not reliably there to be read.** On FireOS 6
+the kernel is 32-bit, so `COMMAND_LINE_SIZE` is 1024; LK wraps the image cmdline
+with 421 bytes of prefix and 344 of suffix, and emOS's own cmdline is 385 bytes
+against stock's 70. Total 1150, and `androidboot.serialno` — near the end of
+LK's suffix — starts at byte 1040 and is cut off before the kernel sees it.
+FireOS 5 boots aarch64 where the limit is 2048 and the same string fits, which
+is why this presented as specific to amonet 2.x. Measured on the spare,
+2026-09-15.
+
+**The cmdline is the only source that can be WRONG rather than absent**, and it
+cannot be guarded against: a value cut mid-truncation is short but well formed,
+and procfs appends a newline either way, so it is byte-identical to a serial
+legitimately last on the line. Using it at all is therefore logged.
+
+A value that is not printable ASCII is **rejected**, not passed on. This is an
+identifier the controller stores, logs and keys rows on, so a plausible-looking
+wrong one is worse than none — `unknown-device` at least says it does not know.
+`emos/init/serialcheck.c` covers both parsers off-target.
+
+**`/proc/idme` carries more than the serial**: `board_id`, `product_name`,
+`productid`, `device_type_id`, and per-unit `alscal` and `miccal.0`–`miccal.6`.
+The board fields are the identity candidate for #541 — `/proc/device-tree/model`
+reads `MT8163` on every board using that SoC and cannot discriminate between
+them, while `device_type_id` (`A3S5BH2HU6VAYF` on a Dot 2) can. The calibration
+values have never been read by anything here.
+
 ## The emOS console password
 
 `consolePassword` arrives on the config push and the firmware does exactly one
@@ -936,4 +1050,4 @@ including why hashing is worth it when deleting the file defeats it, is in
 
 ## cgo dependency
 
-SpeexDSP C source (AEC) is vendored in `device/internal/aec/`. The compiler Docker image provides the ARM cross-toolchain. If adding new cgo dependencies, they must compile cleanly with the `echomuse-compiler` image against the FireOS 5 sysroot.
+SpeexDSP C source (AEC) is vendored in `device/internal/aec/`. `internal/bindings/mixer` links the device's own `libtinyalsa.so` (see the mixer section for the symbol rule). The compiler Docker image provides the ARM cross-toolchain. If adding new cgo dependencies, they must compile cleanly with the `echomuse-compiler` image against the FireOS 5 sysroot.

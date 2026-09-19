@@ -2223,6 +2223,34 @@ def test_the_reconcile_is_debounced_and_claimed_before_the_work():
     assert stamp < ret, "claim the debounce before returning, not after the work"
 
 
+def test_emos_crash_logs_are_checked_on_connect_before_the_debounce():
+    """
+    A device that crashed and reconnected inside the debounce window is the
+    one most worth looking at, so the crash check sits in front of it — and
+    only for a device that positively reported emOS, which is what saves the
+    ram console.
+    """
+    fn = _strip_prose(_fn_body(
+        (CONTROLLER / "em_api.py").read_text(), "reconcile_on_connect"))
+    assert "_collect_crash_log(" in fn
+    assert fn.index("_collect_crash_log(") < fn.index("_reconcile_due(")
+    gate = fn[:fn.index("_collect_crash_log(")]
+    assert "not live.android_userspace" in gate
+
+
+def test_the_crash_log_marker_is_written_only_after_a_complete_read():
+    """
+    The marker says "this boot was examined". Writing it before the read
+    completed would lose a crash to a dropped shell session.
+    """
+    fn = _strip_prose(_fn_body(
+        (CONTROLLER / "em_api.py").read_text(), "_collect_crash_log"))
+    read = fn.index("cat {kmsg}")
+    assert fn.index("_SHELL_OK not in out") > read
+    assert fn.index("summarise(") > fn.index("_SHELL_OK not in out")
+    assert fn.index("> {seen}") > fn.index("summarise(")
+
+
 def test_deleting_a_device_forgets_its_debounce():
     """
     A re-added device is the one whose payloads are least likely to be right;
@@ -2376,6 +2404,80 @@ def test_the_emos_flow_escrows_before_it_flashes():
     # lets it survive the flash.
     assert ids.index("install_em") < ids.index("flash_emos")
     assert ids.index("install_oww") < ids.index("flash_emos")
+
+
+def test_the_fireos_flow_escrows_before_it_patches():
+    """
+    #468: the FireOS flow wrote the boot partition with no copy of the original
+    in the operator's hands. The escrow sits inside runPatchBoot, so ordering
+    WITHIN the function is the guard: stored and downloaded before the first
+    shell call that writes a partition. Matched on shell calls rather than on
+    "of=", for the reason the flash test gives.
+    """
+    src = _jsx()
+    fn = src[src.index("async function runPatchBoot"):]
+    fn = fn[:fn.index("\n  async function runInstallMagisk")]
+    writes = [i for i, line in enumerate(fn.splitlines())
+              if "c.shell(" in line and "of=${boot.target}" in line]
+    assert writes, "runPatchBoot's flash was not found; update this test"
+    lines = fn.splitlines()
+    for marker in ("setEmosRef(", "setEmosTarget(", "_downloadBytes("):
+        at = next((i for i, l in enumerate(lines) if marker in l), None)
+        assert at is not None, f"runPatchBoot must escrow via {marker}"
+        assert at < writes[0], f"{marker} must come before the partition write"
+
+    # And the restore is offered on the TWRP steps that follow the escrow.
+    assert "(isEmos ? (step === 6 || step === 7) : (step >= 2 && step <= 4))" in src, (
+        "the FireOS flow must offer the restore on a failed TWRP step")
+
+
+def test_base_os_survives_the_device_going_offline():
+    """
+    base_os rides the register message and is stored (schema v21). The API
+    used to read it off the live session only, so the dashboard's emOS /
+    FireOS 5 slug would vanish whenever a device went offline — exactly when
+    someone is trying to work out what it was. A live report still wins.
+    """
+    src = (CONTROLLER / "em_api.py").read_text()
+    at = src.index('"baseOs":')
+    line = src[at:src.index("\n", src.index("\n", at) + 1)]
+    assert 'getattr(live, "base_os", None)' in line, "a live report must come first"
+    assert 'row["base_os"]' in line, "offline, baseOs must fall back to the stored value"
+
+
+def test_only_a_registered_device_blocks_the_wizard():
+    """
+    The wizard refuses a device already on the controller — but a row with no
+    firmware_ver is not one. ensure_device_token creates it when the TLS token
+    is minted, before the device has ever connected, so matching on the serial
+    alone refused every re-run of a provision that had got that far.
+    """
+    src = _jsx()
+    at = src.index("appears to already be registered")
+    body = src[src.rindex("knownDevices.find(", 0, at):at]
+    assert "d.firmware_ver" in body, (
+        "the already-registered check must ignore rows that never registered")
+
+
+def test_a_restore_ends_the_wizard_run():
+    """
+    A restore undoes the partition write that every later step builds on, and
+    the wizard cannot step backwards, so carrying on provisions on top of a
+    stock boot image — found on VVV 2026-09-18, sitting on Install Magisk as if
+    Patch Boot had held. A successful restore therefore ends the run: the step
+    controls go, nothing auto-runs, and the operator is told to start again.
+    """
+    src = _jsx()
+    fn = src[src.index("async function restoreEscrowedBoot"):]
+    fn = fn[:fn.index("\n  async function ", 1)]
+    ok = fn.index("Escrowed image restored and verified")
+    assert "setRestored(true)" in fn[ok:], (
+        "setRestored(true) must follow the verified restore, never precede it")
+    assert fn.index("setRestored(true)") > fn.index("_writeBootPartition"), (
+        "the run may only end once the restore has been written and verified")
+    assert "{!restored && (<>" in src, "the step controls must be hidden after a restore"
+    assert "|| running || restored || stepState[step] !== 'pending') return;" in src, (
+        "no step may auto-run after a restore")
 
 
 def test_the_flash_step_verifies_against_the_partition():
